@@ -20,20 +20,22 @@
 #define NOT_FOUND_404 "<h1>404 Not Found</h1>\n"
 #define SERVER_ERROR_500 "<h1>500 Server Error</h1>\n"
 
-
+void error(char *msg)
+{
+    perror(msg);
+    exit(1);
+}
 
 // server의 ip addr과 port를 소켓에 할당
 int bindServer(int s_sock, int port){
-	struct sockaddr_in serv_addr;
-	serv_addr.sin_family = AF_INET; // type : IPV4
-	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY); // IP addr
-	serv_addr.sin_port = htons(port); // port
+	struct sockaddr_in server_addr;
+	server_addr.sin_family = AF_INET; // type : IPV4
+	server_addr.sin_addr.s_addr = htonl(INADDR_ANY); // IP addr
+	server_addr.sin_port = htons(port); // port
 	// socket ip, port 할당을 위해 bind()를 통해 socket file descriptor를 넘겨줌  
-	// s_sock에 serv_add를 할당.
-	return bind(s_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
-	
+	// s_sock에 server_addr를 할당.
+	return bind(s_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
 }
-
 
 // 알맞은 파일 타입을 넣어줌.  (ex: img.jpeg >> jpeg, img.gif >> gif)
 void file_type(char *type, char *uri){
@@ -120,29 +122,28 @@ void http_handler(int c_sock){
 		error_500(c_sock);
 		return;
 	}
-	printf("Request Handling : method=%s, URI=%s\n", method, uri); //print request method, uri
+	printf("%s / HTTP/1.1\nURI=%s\n", method, uri); //print request method, uri
 
 
 	char connect_uri[BUFFER_SIZE];
-	char *local_uri; //local uri
+	char *loc_uri; //local uri
 	struct stat st; //파일정보저장 
 
-	strcpy(connect_uri, uri); // strcpy 문자열 복사 conn_uri에 uri복사
-
+	strcpy(connect_uri, uri); // conn_uri에 uri복사
 	//localhost connecting : connect페이지를 보여준다.
 	if (!strcmp(connect_uri, "/")){
 		strcpy(connect_uri, "/connect.html");
 	}
-	local_uri = connect_uri + 1;
+	loc_uri = connect_uri + 1;
 
    	//매칭되는 파일이 없을 경우, 404 Not Found
-	if (stat(local_uri, &st) == -1){
+	if (stat(loc_uri, &st) == -1){
 		perror("\n>>>404 Not Found\n>>>Failed to found file.\n\n");
 		error_404(c_sock);
 		return;
 	}
 
-	int fd = open(local_uri, O_RDONLY); //읽기 전용으로 열기
+	int fd = open(loc_uri, O_RDONLY); //읽기 전용으로 열기
    	//파일 오픈에 실패했을 경우, Server Error
 	if (fd == -1){
 		perror("\n>>>500 Server Error\n>>>Failed to open file\n\n");
@@ -153,7 +154,7 @@ void http_handler(int c_sock){
 	int len = st.st_size; //st_size=file size.  
 	char type[40];
 
-	file_type(type, local_uri);
+	file_type(type, loc_uri);
 	HTTP_header(header, 200, len, type);
 	write(c_sock, header, strlen(header));
 
@@ -161,21 +162,17 @@ void http_handler(int c_sock){
    	//file content가 buffer보다 클 경우, buffer size만큼 읽음.
 	while ((tmp = read(fd, buf, BUFFER_SIZE)) > 0){
 	   write(c_sock, buf, tmp);
-   }
+   	}
 }
 
-
 int main(int argc, char **argv){
-	int port, pid;
-	int s_sock, c_sock;
+	int port, pid, s_sock, c_sock;
 
 	struct sockaddr_in c_addr; //socket_in= socket addr 틀 형성하는 구조체
 	socklen_t c_addr_len; // client_address 주소  
 	//명령어 문자열 2미만일 경우
 	if (argc < 2){
-		printf("Usage: \n");
-		printf("\t%s {port}: runs HTTP server.\n", argv[0]); // ./server 문자열  
-		exit(0);
+		printf("Usage: \n\t%s {port}: runs HTTP server.\n", argv[0]); // ./server 문자열
 	}
 	//port#. ex)./server 8080 > port#:8080
 	port = atoi(argv[1]);
@@ -186,30 +183,25 @@ int main(int argc, char **argv){
    	//TCP연결 socket 생성, stream방식
 	s_sock = socket(AF_INET, SOCK_STREAM, 0); 
 	if (s_sock == -1){
-		perror("socket error\n");
+		perror("ERROR: socket error\n");
 	}
-
    	// 소켓, 서버 주소 bind
 	if (bindServer(s_sock, port) == -1){   
-		perror("bind error\n");
+		perror("ERROR: bind error\n");
 	}
-   
    	//연결 대기열 5개 생성, listen함수 호출
 	if (listen(s_sock, 5) == -1){
-		perror("listen error\n");
+		perror("ERROR: listen error\n");
 	}
-
 	// signal handler
 	signal(SIGCHLD, SIG_IGN);
-
    	//client request를 받고 response
 	while(1){
-		printf("Waiting...\n");
+		printf("\n>>>Waiting....\n");
 		c_sock = accept(s_sock, (struct sockaddr *)&c_addr, &c_addr_len);
-		
       // client 요청이 오면 connect accept
 		if (c_sock == -1){
-		    perror("accept error.\n");
+		    perror("ERROR: accept error.\n");
 		}
 		pid = fork();
 		if (pid == 0){
@@ -223,7 +215,7 @@ int main(int argc, char **argv){
 			close(c_sock);
 		}
 		if (pid == -1){
-			perror("fork fail.\n");
+			perror("ERROR: fork error.\n");
 		}	
 	}
 }
